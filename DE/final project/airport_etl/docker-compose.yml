@@ -1,0 +1,53 @@
+services:
+  pg_src:
+    image: postgres:16
+    container_name: pg_src
+    environment:
+      POSTGRES_USER: src_user
+      POSTGRES_PASSWORD: src_pass
+      POSTGRES_DB: airport_src
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_src_data:/var/lib/postgresql/data
+    networks: [etl-net]
+
+  pg_dwh:
+    image: postgres:16
+    container_name: pg_dwh
+    environment:
+      POSTGRES_USER: dwh_user
+      POSTGRES_PASSWORD: dwh_pass
+      POSTGRES_DB: airport_dwh
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg_dwh_data:/var/lib/postgresql/data
+    networks: [etl-net]
+
+  airflow:
+    image: apache/airflow:2.9.2
+    container_name: airflow
+    command: standalone
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_UID=50000
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags          # будем класть сюда DAGи
+      - airflow_logs:/opt/airflow/logs            # логи в named volume (чтобы не было прав на NTFS)
+      - airflow_plugins:/opt/airflow/plugins
+    ports:
+      - "8081:8080"
+    networks: [etl-net]
+    depends_on:
+      - pg_src
+      - pg_dwh
+
+networks:
+  etl-net:
+
+volumes:
+  pg_src_data:
+  pg_dwh_data:
+  airflow_logs:
+  airflow_plugins:

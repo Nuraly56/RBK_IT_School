@@ -1,0 +1,90 @@
+version: '3.8'
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.3
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    AIRFLOW_UID: "${AIRFLOW_UID:-50000}"
+    # >>> добавь это:
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+    - airflow_plugins:/opt/airflow/plugins
+  user: "${AIRFLOW_UID:-50000}"
+  depends_on:
+    - airflow-db
+  
+services:
+  airflow-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5435:5432"
+    volumes:
+      - airflow_db:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command: >
+      -c "
+      airflow db init &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+      airflow connections add 'postgres_mb_source' --conn-uri 'postgresql+psycopg2://airflow:airflow@mb_source:5432/mb_source' &&
+      airflow connections add 'postgres_mb_dwh' --conn-uri 'postgresql+psycopg2://airflow:airflow@mb_dwh:5432/mb_dwh'
+      "
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+
+  mb_source:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: mb_source
+    ports:
+      - "5433:5432"
+    volumes:
+      - mb_source_data:/var/lib/postgresql/data
+
+  mb_dwh:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: mb_dwh
+    ports:
+      - "5434:5432"
+    volumes:
+      - mb_dwh_data:/var/lib/postgresql/data
+
+volumes:
+  airflow_db:
+  airflow_logs:
+  airflow_plugins:
+  mb_source_data:
+  mb_dwh_data:
+
